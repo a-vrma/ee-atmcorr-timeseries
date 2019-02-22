@@ -5,11 +5,13 @@
 # authors: Aman Verma, Preeti Rao
 # -----------------------------------------------------------------------------
 
-import ee
+import collections
 from pprint import pprint
 import datetime
 import math
 import pickle
+
+import ee
 
 ee.Initialize()
 from atmcorr.atmospheric import Atmospheric
@@ -32,9 +34,8 @@ NO_OF_BANDS = 13
 # the following creates interpolated lookup tables.
 _ = timeSeries(TARGET, GEOM, START_DATE, STOP_DATE, MISSIONS)
 
-SRTM = ee.Image(
-    "CGIAR/SRTM90_V4"
-)  # Shuttle Radar Topography mission covers *most* of the Earth
+SRTM = ee.Image("CGIAR/SRTM90_V4")
+# Shuttle Radar Topography mission covers *most* of the Earth
 altitude = (
     SRTM.reduceRegion(reducer=ee.Reducer.mean(), geometry=GEOM.centroid())
     .get("elevation")
@@ -53,29 +54,32 @@ S2List = S2.toList(S2.size())  # must loop through lists
 
 NO_OF_IMAGES = S2.size().getInfo()  # no. of images in the collection
 
+AtmParams = collections.namedtuple("AtmParams", ("doy", "solar_z", "h2o", "o3", "aot"))
 
-def atm_corr_image(imageInfo: dict) -> dict:
+
+def atm_corr_image(imageInfo) -> AtmParams:
     """Retrieves atmospheric params from image.
 
     imageInfo is a dictionary created from an ee.Image object
     """
-    atmParams = {}
     # Python uses seconds, EE uses milliseconds:
     scene_date = datetime.datetime.utcfromtimestamp(
         imageInfo["system:time_start"] / 1000
     )
     dt1 = ee.Date(str(scene_date).rsplit(sep=" ")[0])
 
-    atmParams["doy"] = scene_date.timetuple().tm_yday
-    atmParams["solar_z"] = imageInfo["MEAN_SOLAR_ZENITH_ANGLE"]
-    atmParams["h2o"] = Atmospheric.water(GEOM, dt1).getInfo()
-    atmParams["o3"] = Atmospheric.ozone(GEOM, dt1).getInfo()
-    atmParams["aot"] = Atmospheric.aerosol(GEOM, dt1).getInfo()
+    atm_params = AtmParams(
+        doy=scene_date.timetuple().tm_yday,
+        solar_z=imageInfo["MEAN_SOLAR_ZENITH_ANGLE"],
+        h2o=Atmospheric.water(GEOM, dt1).getInfo(),
+        o3=Atmospheric.ozone(GEOM, dt1).getInfo(),
+        aot=Atmospheric.aerosol(GEOM, dt1).getInfo(),
+    )
 
-    return atmParams
+    return atm_params
 
 
-def get_corr_coef(atmParams: dict) -> list:
+def get_corr_coef(atmParams):
     """Gets correction coefficients for each band in the image.
 
     Uses DIRPATH global variable
@@ -91,14 +95,10 @@ def get_corr_coef(atmParams: dict) -> list:
         with open(filepath, "rb") as ilut_file:
             iluTable = pickle.load(ilut_file)
         a, b = iluTable(
-            atmParams["solar_z"],
-            atmParams["h2o"],
-            atmParams["o3"],
-            atmParams["aot"],
-            KM,
+            atmParams.solar_z, atmParams.h2o, atmParams.o3, atmParams.aot, KM
         )
         elliptical_orbit_correction = (
-            0.03275104 * math.cos(atmParams["doy"] / 59.66638337) + 0.96804905
+            0.03275104 * math.cos(atmParams.doy / 59.66638337) + 0.96804905
         )
         a *= elliptical_orbit_correction
         b *= elliptical_orbit_correction
@@ -106,7 +106,7 @@ def get_corr_coef(atmParams: dict) -> list:
     return corr_coefs
 
 
-def toa_to_rad_multiplier(bandname: str, imageInfo: dict, atmParams: dict) -> float:
+def toa_to_rad_multiplier(bandname, imageInfo, atmParams):
     """Returns a multiplier for converting TOA reflectance to radiance
 
     bandname is a string like 'B1'
@@ -124,7 +124,7 @@ def toa_to_rad_multiplier(bandname: str, imageInfo: dict, atmParams: dict) -> fl
     return multiplier
 
 
-def atm_corr_band(image, imageInfo: dict, atmParams: dict):
+def atm_corr_band(image, imageInfo, atmParams):
     """Atmospherically correct image
 
     Converts toa reflectance to radiance.
