@@ -36,12 +36,12 @@ _ = timeSeries(TARGET, GEOM, START_DATE, STOP_DATE, MISSIONS)
 
 SRTM = ee.Image("CGIAR/SRTM90_V4")
 # Shuttle Radar Topography mission covers *most* of the Earth
-altitude = (
+ALTITUDE = (
     SRTM.reduceRegion(reducer=ee.Reducer.mean(), geometry=GEOM.centroid())
     .get("elevation")
     .getInfo()
 )
-KM = altitude / 1000  # i.e. Py6S uses units of kilometers
+KM = ALTITUDE / 1000  # i.e. Py6S uses units of kilometers
 
 # The Sentinel-2 image collection
 S2 = (
@@ -89,8 +89,8 @@ def get_corr_coef(atmParams):
     """
     corr_coefs = []
     # string list with padding of 2
-    bandNos = [str(i).zfill(2) for i in range(1, NO_OF_BANDS + 1)]
-    for band in bandNos:
+    band_nums = [str(img_idx).zfill(2) for img_idx in range(1, NO_OF_BANDS + 1)]
+    for band in band_nums:
         filepath = DIRPATH + "S2A_MSI_" + band + ".ilut"
         with open(filepath, "rb") as ilut_file:
             iluTable = pickle.load(ilut_file)
@@ -131,39 +131,43 @@ def atm_corr_band(image, imageInfo, atmParams):
     Applies correction coefficients to get surface reflectance
     Returns ee.Image object
     """
-    oldImage = ee.Image(image).divide(10000)
-    newImage = ee.Image()
+    old_image = ee.Image(image).divide(10000)
+    new_image = ee.Image()
     cor_coeff_list = get_corr_coef(atmParams)
-    bandnames = oldImage.bandNames().getInfo()
+    bandnames = old_image.bandNames().getInfo()
     for ii in range(NO_OF_BANDS):
-        img2RadMultiplier = toa_to_rad_multiplier(bandnames[ii], imageInfo, atmParams)
-        imgRad = oldImage.select(bandnames[ii]).multiply(img2RadMultiplier)
-        constImageA = ee.Image.constant(cor_coeff_list[ii][0])
-        constImageB = ee.Image.constant(cor_coeff_list[ii][1])
-        surRef = imgRad.subtract(constImageA).divide(constImageB)
-        newImage = newImage.addBands(surRef)
+        img_to_rad_multiplier = toa_to_rad_multiplier(
+            bandnames[ii], imageInfo, atmParams
+        )
+        img_rad = old_image.select(bandnames[ii]).multiply(img_to_rad_multiplier)
+        const_img_a = ee.Image.constant(cor_coeff_list[ii][0])
+        const_img_b = ee.Image.constant(cor_coeff_list[ii][1])
+        surface_refl = img_rad.subtract(const_img_a).divide(const_img_b)
+        new_image = new_image.addBands(surface_refl)
 
     # unpack a list of the band indexes:
-    return newImage.select(*list(range(NO_OF_BANDS)))
+    return new_image.select(*list(range(NO_OF_BANDS)))
 
 
-S3 = S2List
+S2List_copy = S2List
 corrected_images = ee.List([0])  # Can't init empty list so need a garbage element
 export_list = []
 coeff_list = []
-for i in range(NO_OF_IMAGES):
-    iInfo = S3.get(i).getInfo()
-    iInfoProps = iInfo["properties"]
-    atmVars = atm_corr_image(iInfoProps)
-    corrCoeffs = get_corr_coef(atmVars)
-    coeff_list.append(corrCoeffs)
-    # Set to true to get an ee.List with the images or even export them to EE.
+for img_idx in range(NO_OF_IMAGES):
+    img_info = S2List_copy.get(img_idx).getInfo()
+    img_info_properties = img_info["properties"]
+    atm_vars = atm_corr_image(img_info_properties)
+    corr_coeffs = get_corr_coef(atm_vars)
+    coeff_list.append(corr_coeffs)
+    # Set to True to get an ee.List with the images and even export them to EE.
     EXPORT = False
     if EXPORT:
-        img = atm_corr_band(ee.Image(S2List.get(i)), iInfoProps, atmVars)
+        img = atm_corr_band(
+            ee.Image(S2List.get(img_idx)), img_info_properties, atm_vars
+        )
         export = ee.batch.Export.image.toDrive(
             image=img,
-            fileNamePrefix="sen2_" + str(i),
+            fileNamePrefix="sen2_" + str(img_idx),
             description="py",
             scale=10,
             folder="gee_img",
