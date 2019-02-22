@@ -1,9 +1,8 @@
+# added by a vscode user
+.vscode/
+
 # added by Sam Murphy (2017-06-22)
 files/
-
-####
-#### The following is a standard gitignore from: https://github.com/github/gitignore/edit/master/Python.gitignore
-#### 
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -104,4 +103,3 @@ ENV/
 
 # mypy
 .mypy_cache/
-
