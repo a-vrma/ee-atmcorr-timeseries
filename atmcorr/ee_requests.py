@@ -53,7 +53,7 @@ class TimeSeries:
     Calculates mean average pixel values in a geometry
     """    
     
-    mean_averages = image.reduceRegion(reducer = ee.Reducer.mean(), geometry = geom, maxPixels=2**63 - 1)
+    mean_averages = image.reduceRegion(reducer = ee.Reducer.mean(), geometry = geom, bestEffort = True)
     
     return mean_averages
    
