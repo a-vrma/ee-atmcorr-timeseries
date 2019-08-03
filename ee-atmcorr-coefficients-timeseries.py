@@ -57,7 +57,7 @@ NO_OF_IMAGES = S2.size().getInfo()  # no. of images in the collection
 AtmParams = collections.namedtuple("AtmParams", ("doy", "solar_z", "h2o", "o3", "aot"))
 
 
-def atm_corr_image(imageInfo) -> AtmParams:
+def atm_corr_image(imageInfo):
     """Retrieves atmospheric params from image.
 
     imageInfo is a dictionary created from an ee.Image object
@@ -176,7 +176,7 @@ for img_idx in range(NO_OF_IMAGES):
         export_list.append(export)
         corrected_images = corrected_images.add(img)
 
-# Need to remove the first element from the list (remeber?)
+# Need to remove the first element from the list
 corrected_images = corrected_images.slice(1)
 
 if EXPORT:
